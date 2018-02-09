@@ -18,22 +18,40 @@ error_chain! {
     }
 }
 
+struct Image {
+    data: image::DynamicImage
+}
+
+impl Image {
+    fn as_cursor(self) -> Cursor<Vec<u8>> {
+        let mut c = Cursor::new(Vec::new());
+        self.data.save(&mut c, image::JPEG).unwrap();
+        c
+    }
+}
+
+impl<'r> rocket::response::Responder<'r> for Image {
+    fn respond_to(self, _: &rocket::Request) -> rocket::response::Result<'r> {
+        rocket::Response::build()
+            .header(rocket::http::ContentType::JPEG)
+            .sized_body(self.as_cursor())
+            .ok()
+    }
+}
+
 // scale image so that the whole image fits inside rectangle given by height and width.
-fn fit(img: image::DynamicImage, height: Option<u32>, width: Option<u32>) -> ImageData {
+fn fit(img: image::DynamicImage, height: Option<u32>, width: Option<u32>) -> Image {
     let old_h = height.unwrap_or(img.height());
     let old_w = width.unwrap_or(img.width());
 
     let thumbnail = img.resize(old_w, old_h, image::FilterType::Lanczos3);
 
-    let mut c = Cursor::new(Vec::new());
-    thumbnail.save(&mut c, image::JPEG).unwrap();
-
-    ImageData{cursor: c}
+    Image{data: thumbnail}
 }
 
 // scale image so that it fills up whole rectangle given by height and width,
 // then crop image to rectangle.
-fn fill(img: image::DynamicImage, height: Option<u32>, width: Option<u32>) -> ImageData {
+fn fill(img: image::DynamicImage, height: Option<u32>, width: Option<u32>) -> Image {
     let old_h = img.height() as f32;
     let old_w = img.width() as f32;
 
@@ -53,32 +71,16 @@ fn fill(img: image::DynamicImage, height: Option<u32>, width: Option<u32>) -> Im
     let mut thumbnail = img.resize(new_w as u32, new_h as u32, image::FilterType::Lanczos3);
     let cropped_thumbnail = thumbnail.crop(x_0, y_0, target_w as u32, target_h as u32);
 
-    let mut c = Cursor::new(Vec::new());
-    cropped_thumbnail.save(&mut c, image::JPEG).unwrap();
-
-    ImageData{cursor: c}
+    Image{data: cropped_thumbnail}
 }
 
-fn resize_image(img: image::DynamicImage, mode: String, height: Option<u32>, width: Option<u32>) -> Result<ImageData> {
+fn resize_image(img: image::DynamicImage, mode: String, height: Option<u32>, width: Option<u32>) -> Result<Image> {
     if mode == "fill" {
         return Ok(fill(img, height, width));
     } else if mode == "fit" {
         return Ok(fit(img, height, width));
     }
     unreachable!();
-}
-
-struct ImageData {
-    cursor: Cursor<Vec<u8>>
-}
-
-impl<'r> rocket::response::Responder<'r> for ImageData {
-    fn respond_to(self, _: &rocket::Request) -> rocket::response::Result<'r> {
-        rocket::Response::build()
-            .header(rocket::http::ContentType::JPEG)
-            .sized_body(self.cursor)
-            .ok()
-    }
 }
 
 fn download_image(url: &str) -> Result<image::DynamicImage> {
@@ -111,7 +113,7 @@ struct ResizeRequest {
 }
 
 #[get("/resize?<request>")]
-fn retrieve(request: ResizeRequest) -> Result<ImageData> {
+fn retrieve(request: ResizeRequest) -> Result<Image> {
     let img = download_image(request.url.as_str())?;
     resize_image(
         img,
