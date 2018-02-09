@@ -4,10 +4,19 @@
 extern crate rocket;
 extern crate reqwest;
 extern crate image;
+extern crate envy;
 extern crate url;
 
 #[macro_use]
+extern crate lazy_static;
+
+#[macro_use]
+extern crate serde_derive;
+
+#[macro_use]
 extern crate error_chain;
+
+use std::collections::HashSet;
 use std::io::copy;
 use std::io::{Cursor};
 use image::GenericImage;
@@ -133,15 +142,40 @@ impl<'v> FromFormValue<'v> for ValidUrl {
     }
 }
 
+#[derive(Deserialize, Debug)]
+struct Config {
+    url_whitelist: Vec<String>
+}
+
+lazy_static! {
+    static ref URL_WHITELIST: HashSet<String> = {
+        let mut m = HashSet::new();
+        for url in envy::from_env::<Config>().unwrap().url_whitelist {
+            m.insert(url);
+        }
+        m
+    };
+}
+
+fn valid_host(url: &Url) -> bool {
+    match url.host_str() {
+        Some(url) => URL_WHITELIST.contains(url),
+        None => false
+    }
+}
+
 #[get("/resize?<request>")]
 fn retrieve(request: ResizeRequest) -> Result<Image> {
-    let img = download_image(request.url.0.as_str())?;
-    resize_image(
-        img,
-        request.mode.unwrap_or("fit".to_string()),
-        request.height,
-        request.width
-    )
+    if valid_host(&request.url.0) {
+        let img = download_image(request.url.0.as_str())?;
+        return resize_image(
+            img,
+            request.mode.unwrap_or("fit".to_string()),
+            request.height,
+            request.width
+        )
+    }
+    Err("Invalid hostname".into())
 }
 
 fn main() {
