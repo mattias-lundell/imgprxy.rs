@@ -4,11 +4,16 @@
 extern crate rocket;
 extern crate reqwest;
 extern crate image;
+extern crate url;
+
 #[macro_use]
 extern crate error_chain;
 use std::io::copy;
 use std::io::{Cursor};
 use image::GenericImage;
+use rocket::request::FromFormValue;
+use rocket::http::RawStr;
+use url::{Url};
 
 error_chain! {
     foreign_links {
@@ -106,15 +111,31 @@ fn download_image(url: &str) -> Result<image::DynamicImage> {
 
 #[derive(Debug, FromForm)]
 struct ResizeRequest {
-    url: String,
+    url: ValidUrl,
     mode: Option<String>,
     height: Option<u32>,
     width: Option<u32>
 }
 
+#[derive(Debug)]
+struct ValidUrl(Url);
+
+impl<'v> FromFormValue<'v> for ValidUrl {
+    type Error = Error;
+
+    fn from_form_value(form_value: &'v RawStr) -> Result<ValidUrl> {
+        match form_value.parse::<Url>() {
+            Ok(url) => {
+                Ok(ValidUrl(url))
+            },
+            _ => Err("Invalid URL".into()),
+        }
+    }
+}
+
 #[get("/resize?<request>")]
 fn retrieve(request: ResizeRequest) -> Result<Image> {
-    let img = download_image(request.url.as_str())?;
+    let img = download_image(request.url.0.as_str())?;
     resize_image(
         img,
         request.mode.unwrap_or("fit".to_string()),
