@@ -29,6 +29,8 @@ error_chain! {
         ReqError(reqwest::Error);
         IoError(std::io::Error);
         ImageError(image::ImageError);
+        Utf8Error(std::str::Utf8Error);
+        ParseError(reqwest::UrlError);
     }
 }
 
@@ -141,10 +143,9 @@ impl<'v> FromFormValue<'v> for ValidUrl {
     type Error = Error;
 
     fn from_form_value(form_value: &'v RawStr) -> Result<ValidUrl> {
-        match form_value.parse::<Url>() {
-            Ok(url) => Ok(ValidUrl(url)),
-            _ => Err("Invalid URL".into()),
-        }
+        let decoded = form_value.url_decode()?;
+        let url = Url::parse(decoded.as_str())?;
+        Ok(ValidUrl(url))
     }
 }
 
