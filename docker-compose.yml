@@ -1,0 +1,10 @@
+version: '3'
+
+services:
+  imgprxy:
+    build: .
+    environment:
+      - ROCKET_ADDRESS=0.0.0.0
+      - URL_WHITELIST=cdn.fishbrain.com
+    ports:
+      - "8000:8000"
